@@ -168,10 +168,41 @@ jobs:
       with:
         swap-size-gb: 12
 
+    # ========== 新增步骤：修复 BoardConfig 避免 /bootimg.mk 错误 ==========
+    - name: Fix BoardConfig for bootimg.mk error
+      run: |
+        BOARD_CONFIG="${{ github.event.inputs.DEVICE_PATH }}/BoardConfig.mk"
+        if [ ! -f "$BOARD_CONFIG" ]; then
+          echo "Error: BoardConfig.mk not found at $BOARD_CONFIG"
+          exit 1
+        fi
+        
+        # 检查并添加 BOARD_BOOTIMAGE_PARTITION_SIZE
+        if ! grep -q "BOARD_BOOTIMAGE_PARTITION_SIZE" "$BOARD_CONFIG"; then
+          echo "BOARD_BOOTIMAGE_PARTITION_SIZE := 0x1000000" >> "$BOARD_CONFIG"
+          echo "Added BOARD_BOOTIMAGE_PARTITION_SIZE (16MB, adjust if needed)"
+        else
+          echo "BOARD_BOOTIMAGE_PARTITION_SIZE already defined, skipping."
+        fi
+        
+        # 检查并添加 TARGET_NO_BOOTIMG
+        if ! grep -q "TARGET_NO_BOOTIMG" "$BOARD_CONFIG"; then
+          echo "TARGET_NO_BOOTIMG := true" >> "$BOARD_CONFIG"
+          echo "Added TARGET_NO_BOOTIMG (skip boot.img generation)"
+        else
+          echo "TARGET_NO_BOOTIMG already defined, skipping."
+        fi
+        
+        # 可选：如果 BOARD_CUSTOM_BOOTIMG_MK 指向了不存在的文件，可以注释掉或清空
+        # 这里不做处理，因为主要问题已解决
+      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
     - name: Building recovery
       run: |
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
+        # 强制跳过 boot.img 生成（双重保障）
+        export TARGET_NO_BOOTIMG=true
         # 尝试 lunch，如果失败则尝试使用设备路径作为备选
         if ! lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng; then
           echo "Lunch failed, trying with device path..."
