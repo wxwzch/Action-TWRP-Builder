@@ -38,7 +38,7 @@ on:
         required: true
         default: 'twrp_I003D'
       BUILD_TARGET:
-        description: 'BUILD_TARGET'
+        description: 'BUILD_TARGET (usually "recovery" for TWRP)'
         required: true
         default: 'recovery'
 
@@ -62,14 +62,11 @@ jobs:
         echo "Build Target: ${{ github.event.inputs.BUILD_TARGET }}.img"
         echo "::endgroup::"
 
-    # You might want to Checkout your repo first, but not mandatory
     - name: Check Out
       uses: actions/checkout@v4
 
-    # Cleanup The Actions Workspace Using Custom Composite Run Actions
     - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
-      # That's it! Now use your normal steps
 
     - name: Prepare the environment
       run: |
@@ -159,18 +156,28 @@ jobs:
         lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng && make clean && make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
+    # ========== 新增调试步骤：列出所有生成的文件 ==========
+    - name: List generated files
+      run: |
+        echo "=== out/target/product/${{ github.event.inputs.DEVICE_NAME }}/ contents ==="
+        ls -la out/target/product/${{ github.event.inputs.DEVICE_NAME }}/ || echo "Directory not found"
+        echo "=== Find any .img or .zip files under out/ ==="
+        find out/ -type f \( -name "*.img" -o -name "*.zip" \) 2>/dev/null || echo "No img/zip files found"
+      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
     - name: Upload to Release
       uses: softprops/action-gh-release@v2
       with:
-        files: | 
-          out/target/product/${{ github.event.inputs.DEVICE_NAME }}/${{ github.event.inputs.BUILD_TARGET }}.img
+        # 注意：TWRP 的标准输出是 recovery.img，而不是 ${BUILD_TARGET}.img
+        files: |
+          out/target/product/${{ github.event.inputs.DEVICE_NAME }}/recovery.img
           out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*.zip
-          out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*vendor*.img
         name: ${{ github.event.inputs.DEVICE_NAME }}-${{ github.run_id }}
         tag_name: ${{ github.run_id }}
         body: |
           Manifest: ${{ github.event.inputs.MANIFEST_BRANCH }}
           Device: ${{ github.event.inputs.DEVICE_NAME }}
           Target: ${{ github.event.inputs.BUILD_TARGET }}.img
+        overwrite_files: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
